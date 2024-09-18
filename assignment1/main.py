@@ -22,7 +22,9 @@ def get_args():
     parser.add_argument("--word_drop", type=float, default=0.3)
     parser.add_argument("--emb_drop", type=float, default=0.333)
     parser.add_argument("--hid_drop", type=float, default=0.333)
-    parser.add_argument("--pooling_method", type=str, default="avg", choices=["sum", "avg", "max"])
+    parser.add_argument(
+        "--pooling_method", type=str, default="avg", choices=["sum", "avg", "max"]
+    )
     parser.add_argument("--grad_clip", type=float, default=5.0)
     parser.add_argument("--max_train_epoch", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=16)
@@ -32,19 +34,25 @@ def get_args():
     parser.add_argument("--log_niter", type=int, default=100)
     parser.add_argument("--eval_niter", type=int, default=500)
     parser.add_argument("--model", type=str, default="model.pt")  # save/load model name
-    parser.add_argument("--dev_output", type=str, default="output.dev.txt")  # output for dev
-    parser.add_argument("--test_output", type=str, default="output.test.txt")  # output for dev
+    parser.add_argument(
+        "--dev_output", type=str, default="output.dev.txt"
+    )  # output for dev
+    parser.add_argument(
+        "--test_output", type=str, default="output.test.txt"
+    )  # output for dev
     args = parser.parse_args()
     print(f"RUN: {vars(args)}")
     return args
+
 
 def read_dataset(filename):
     dataset = []
     with open(filename, "r", encoding="utf-8") as f:
         for line in f:
             tag, words = line.lower().strip().split(" ||| ")
-            dataset.append((words.split(' '), tag))
+            dataset.append((words.split(" "), tag))
     return dataset
+
 
 def convert_text_to_ids(dataset, word_vocab, tag_vocab):
     data = []
@@ -52,6 +60,7 @@ def convert_text_to_ids(dataset, word_vocab, tag_vocab):
         word_ids = [word_vocab[w] for w in words]
         data.append((word_ids, tag_vocab[tag]))
     return data
+
 
 def data_iter(data, batch_size, shuffle=True):
     """
@@ -69,9 +78,10 @@ def data_iter(data, batch_size, shuffle=True):
         tags = [data[i * batch_size + b][1] for b in range(cur_batch_size)]
         yield sents, tags
 
+
 def pad_sentences(sents, pad_id):
     """
-    Adding pad_id to sentences in a mini-batch to ensure that 
+    Adding pad_id to sentences in a mini-batch to ensure that
     all augmented sentences in a mini-batch have the same word length.
     Args:
         sents: list(list(int)), a list of a list of word ids
@@ -79,7 +89,12 @@ def pad_sentences(sents, pad_id):
     Return:
         aug_sents: list(list(int)), |s_1| == |s_i|, for s_i in sents
     """
-    raise NotImplementedError()
+    max_len = max([len(s) for s in sents])
+    aug_sents = []
+    for s in sents:
+        aug_sents.append(s + [pad_id] * (max_len - len(s)))
+    return aug_sents
+
 
 def compute_grad_norm(model, norm_type=2):
     """
@@ -91,7 +106,7 @@ def compute_grad_norm(model, norm_type=2):
             continue
         p_norm = p.grad.norm(norm_type) ** (norm_type)
         total_norm += p_norm
-    return total_norm ** (1. / norm_type)
+    return total_norm ** (1.0 / norm_type)
 
 
 def compute_param_norm(model, norm_type=2):
@@ -102,7 +117,8 @@ def compute_param_norm(model, norm_type=2):
     for p in model.parameters():
         p_norm = p.norm(norm_type) ** (norm_type)
         total_norm += p_norm
-    return total_norm ** (1. / norm_type)
+    return total_norm ** (1.0 / norm_type)
+
 
 def evaluate(dataset, model, device, tag_vocab=None, filename=None):
     """
@@ -117,22 +133,24 @@ def evaluate(dataset, model, device, tag_vocab=None, filename=None):
         y_pred = scores.argmax(1)[0].item()
         predicts.append(y_pred)
         acc += int(y_pred == tag)
-    print(f'  -Accuracy: {acc/len(predicts):.4f} ({acc}/{len(predicts)})')
+    print(f"  -Accuracy: {acc/len(predicts):.4f} ({acc}/{len(predicts)})")
     if filename:
-        with open(filename, 'w') as f:
+        with open(filename, "w") as f:
             for y_pred in predicts:
                 # convert tag_id to its original label
                 tag = tag_vocab.id2word[y_pred]
-                f.write(f'{tag}\n')
-        print(f'  -Save predictions to {filename}')
+                f.write(f"{tag}\n")
+        print(f"  -Save predictions to {filename}")
     model.train()
-    return acc/len(predicts)
+    return acc / len(predicts)
+
 
 def main():
     args = get_args()
     _seed = os.environ.get("MINNN_SEED", 12341)
     random.seed(_seed)
     np.random.seed(_seed)
+    torch.manual_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Read datasets
@@ -152,11 +170,12 @@ def main():
     # Create a model
     nwords = len(word_vocab)
     ntags = len(tag_vocab)
-    print('nwords', nwords, 'ntags', ntags)
+    print("nwords", nwords, "ntags", ntags)
     model = mn.DanModel(args, word_vocab, len(tag_vocab)).to(device)
     loss_func = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adagrad(model.parameters(), lr=args.lrate, lr_decay=args.lrate_decay)
-
+    optimizer = torch.optim.Adagrad(
+        model.parameters(), lr=args.lrate, lr_decay=args.lrate_decay, weight_decay=1e-5
+    )
     # Training
     start_time = time.time()
     train_iter = 0
@@ -166,7 +185,7 @@ def main():
         for batch in data_iter(train_data, batch_size=args.batch_size, shuffle=True):
             train_iter += 1
 
-            X = pad_sentences(batch[0], word_vocab['<pad>'])
+            X = pad_sentences(batch[0], word_vocab["<pad>"])
             X = torch.LongTensor(X).to(device)
             Y = torch.LongTensor(batch[1]).to(device)
             # Forward pass: compute the unnormalized scores for P(Y|X)
@@ -176,7 +195,9 @@ def main():
             optimizer.zero_grad()
             loss.backward()
             if args.grad_clip > 0:
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), args.grad_clip
+                )
             # Update model's parameters with gradients
             optimizer.step()
 
@@ -188,18 +209,22 @@ def main():
             if train_iter % args.log_niter == 0:
                 gnorm = compute_grad_norm(model)
                 pnorm = compute_param_norm(model)
-                print(f'Epoch {epoch}, iter {train_iter}, train set: '\
-                    f'loss={train_loss/train_example:.4f}, '\
-                    f'accuracy={train_correct/train_example:.2f} ({train_correct}/{train_example}), '\
-                    f'gradient_norm={gnorm:.2f}, params_norm={pnorm:.2f}, '\
-                    f'time={time.time()-start_time:.2f}s')
+                print(
+                    f"Epoch {epoch}, iter {train_iter}, train set: "
+                    f"loss={train_loss/train_example:.4f}, "
+                    f"accuracy={train_correct/train_example:.2f} ({train_correct}/{train_example}), "
+                    f"gradient_norm={gnorm:.2f}, params_norm={pnorm:.2f}, "
+                    f"time={time.time()-start_time:.2f}s"
+                )
                 train_loss = train_example = train_correct = 0
 
             if train_iter % args.eval_niter == 0:
-                print(f'Evaluate dev data:')
-                dev_accuracy = evaluate(dev_data, model, device) 
+                print(f"Evaluate dev data:")
+                dev_accuracy = evaluate(dev_data, model, device)
                 if dev_accuracy > best_records[1]:
-                    print(f'  -Update best model at {train_iter}, dev accuracy={dev_accuracy:.4f}')
+                    print(
+                        f"  -Update best model at {train_iter}, dev accuracy={dev_accuracy:.4f}"
+                    )
                     best_records = (train_iter, dev_accuracy)
                     model.save(args.model)
 
@@ -209,5 +234,5 @@ def main():
     evaluate(dev_data, model, device, tag_vocab, filename=args.dev_output)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
