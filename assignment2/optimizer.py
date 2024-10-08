@@ -78,6 +78,6 @@ class AdamW(Optimizer):
                     )
 
                 denom = v.sqrt().add_(eps)
-                p.data.addcdiv_(m, denom, value=-alpha)
                 p.data.add_(p.data, alpha=-weight_decay * group["lr"])
+                p.data.addcdiv_(m, denom, value=-alpha)
         return loss
